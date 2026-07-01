@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+from modules.constants import REGION_OPTIONS
+
 
 def _clean_text(value: object) -> str:
     return str(value or "").strip()
@@ -12,7 +14,7 @@ def validate_submission(payload: Dict[str, object]) -> List[str]:
 
     codigo = _clean_text(payload.get("codigo_mca"))
     nombre = _clean_text(payload.get("nombre_mca"))
-    region = _clean_text(payload.get("region"))
+    region = _clean_text(payload.get("region")).upper()
 
     if not codigo:
         errors.append("El campo CODIGO MCA es obligatorio.")
@@ -20,6 +22,8 @@ def validate_submission(payload: Dict[str, object]) -> List[str]:
         errors.append("El campo NOMBRE MCA es obligatorio.")
     if not region:
         errors.append("El campo REGION es obligatorio.")
+    elif region not in REGION_OPTIONS:
+        errors.append("REGION debe ser una de las opciones habilitadas del formulario.")
 
     try:
         brigadas = int(payload.get("brigadas_realizadas", 0))
