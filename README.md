@@ -17,11 +17,15 @@ La plantilla adjunta tiene una hoja llamada `Hoja1` y estos encabezados en la fi
 
 La descarga del administrador mantiene esa estructura y copia el estilo del cuerpo del archivo original.
 
+## Base de datos
+
+Para producción, la aplicación usa PostgreSQL cuando existe el secreto o variable de entorno `DATABASE_URL`.
+
+Si no existe `DATABASE_URL`, la app usa SQLite local como respaldo para pruebas locales. Este modo no se recomienda para producción porque el almacenamiento local puede perderse en algunos servicios de hosting.
+
 ## Por qué no se guarda directamente cada envío en Excel
 
-Para datos grandes y varios usuarios, Excel no debe ser la base principal porque puede dañarse o bloquearse si dos personas escriben al mismo tiempo. Por eso esta app guarda los registros en SQLite y genera el Excel con formato cuando el administrador lo descarga.
-
-Para producción con muchos usuarios, reemplaza SQLite por PostgreSQL, Supabase, Firebase o una base gestionada. La capa de formulario y exportación a Excel puede mantenerse igual.
+Para datos grandes y varios usuarios, Excel no debe ser la base principal porque puede dañarse o bloquearse si dos personas escriben al mismo tiempo. Por eso esta app guarda los registros en una base de datos y genera el Excel con formato cuando el administrador lo descarga.
 
 ## Instalación local
 
@@ -35,7 +39,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Configurar contraseña de administrador
+## Configurar secretos
 
 Copia el archivo de ejemplo:
 
@@ -47,9 +51,12 @@ Edita `.streamlit/secrets.toml`:
 
 ```toml
 ADMIN_PASSWORD = "tu_clave_segura"
+DATABASE_URL = "postgresql://usuario:password@host:5432/base?sslmode=require"
 ```
 
-Si no configuras contraseña, la app local usa `admin123` como clave temporal.
+Si no configuras `ADMIN_PASSWORD`, la app local usa `admin123` como clave temporal.
+
+Si no configuras `DATABASE_URL`, la app usa SQLite local.
 
 ## Ejecutar
 
@@ -57,24 +64,27 @@ Si no configuras contraseña, la app local usa `admin123` como clave temporal.
 streamlit run app.py
 ```
 
-## Publicar fácilmente
+## Publicar en Streamlit Community Cloud
 
-Opción simple:
+1. Conecta el repositorio de GitHub.
+2. Selecciona la rama `main`.
+3. Usa `app.py` como archivo principal.
+4. En **App settings > Secrets**, agrega:
 
-1. Sube esta carpeta a un repositorio de GitHub.
-2. Conecta el repositorio en Streamlit Community Cloud.
-3. Define el secreto `ADMIN_PASSWORD` en la configuración de la app.
-4. Ejecuta `app.py` como archivo principal.
+```toml
+ADMIN_PASSWORD = "tu_clave_segura"
+DATABASE_URL = "postgresql://usuario:password@host:5432/base?sslmode=require"
+```
 
-Nota importante: si el hosting no tiene disco persistente, los datos de SQLite se pueden perder al reiniciar la app. Para uso real con muchos registros, usa un servicio con disco persistente o una base externa.
+La tabla `submissions` se crea automáticamente cuando la app inicia.
 
 ## Archivos importantes
 
 ```text
 app.py                         Interfaz principal de Streamlit
-modules/db.py                  Guardado y consulta en SQLite
+modules/db.py                  Guardado y consulta en PostgreSQL, con SQLite local como respaldo
 modules/excel_export.py         Generación del Excel con formato original
 modules/validation.py           Validaciones del formulario
 templates/FORMATOBRIGADAS.xlsx Plantilla original
-data/                          Base SQLite local en ejecución
+data/                          Base SQLite local solo cuando no se configura DATABASE_URL
 ```
