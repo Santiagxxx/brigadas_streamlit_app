@@ -10,6 +10,7 @@ from modules.constants import REGION_OPTIONS
 from modules.db import (
     count_records,
     delete_all_records,
+    get_database_backend,
     get_recent_records,
     get_records_for_export,
     init_db,
@@ -123,10 +124,11 @@ def render_admin_page() -> None:
     total = count_records()
     recent = get_recent_records(limit=500)
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("Registros totales", total)
     col2.metric("Vista previa", min(total, 500))
-    col3.metric("Formato", "A:F")
+    col3.metric("Base de datos", get_database_backend())
+    col4.metric("Formato", "A:F")
 
     st.subheader("Vista previa de registros recientes")
     if recent:
@@ -169,7 +171,7 @@ def render_admin_page() -> None:
         )
 
     with st.expander("Zona de mantenimiento"):
-        st.warning("Esta acción elimina todos los registros de la base local SQLite.")
+        st.warning("Esta acción elimina todos los registros de la base de datos configurada.")
         confirmation = st.text_input("Escribe ELIMINAR para borrar todos los registros")
         if st.button("Borrar registros", disabled=confirmation != "ELIMINAR"):
             delete_all_records()
