@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from modules.constants import REGION_OPTIONS
 from modules.db import (
     count_records,
     delete_all_records,
@@ -67,7 +68,12 @@ def render_form_page() -> None:
             personas_brigada_1 = st.number_input("# PERSONAS BRIGADA 1 *", min_value=0, step=1, value=0)
         with col2:
             nombre_mca = st.text_input("NOMBRE MCA *", placeholder="Nombre del MCA")
-            region = st.text_input("REGION *", placeholder="Ejemplo: Bogotá, Centro, Norte...")
+            region = st.selectbox(
+                "REGION *",
+                options=["", *REGION_OPTIONS],
+                index=0,
+                format_func=lambda option: "Selecciona una región" if option == "" else option,
+            )
             if brigadas_realizadas == 2:
                 personas_brigada_2 = st.number_input("# PERSONAS BRIGADA 2 *", min_value=0, step=1, value=0)
             else:
@@ -83,7 +89,7 @@ def render_form_page() -> None:
             "brigadas_realizadas": int(brigadas_realizadas),
             "personas_brigada_1": int(personas_brigada_1),
             "personas_brigada_2": int(personas_brigada_2),
-            "region": region.strip(),
+            "region": str(region).strip(),
         }
         errors = validate_submission(payload)
         if errors:
