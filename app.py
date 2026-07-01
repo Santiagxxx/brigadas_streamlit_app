@@ -60,11 +60,17 @@ def render_form_page() -> None:
     st.title("Formulario de Brigadas")
     st.caption("La información diligenciada queda almacenada y el administrador puede descargarla en el formato Excel original.")
 
+    brigadas_realizadas = st.selectbox(
+        "BRIGADAS REALIZADAS *",
+        options=[1, 2],
+        index=0,
+        help="Al seleccionar 2, se habilita el campo # PERSONAS BRIGADA 2.",
+    )
+
     with st.form("brigadas_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
             codigo_mca = st.text_input("CODIGO MCA *", placeholder="Ejemplo: MCA001")
-            brigadas_realizadas = st.selectbox("BRIGADAS REALIZADAS *", options=[1, 2], index=0)
             personas_brigada_1 = st.number_input("# PERSONAS BRIGADA 1 *", min_value=0, step=1, value=0)
         with col2:
             nombre_mca = st.text_input("NOMBRE MCA *", placeholder="Nombre del MCA")
@@ -79,6 +85,7 @@ def render_form_page() -> None:
             else:
                 personas_brigada_2 = 0
                 st.number_input("# PERSONAS BRIGADA 2", min_value=0, step=1, value=0, disabled=True)
+                st.caption("Este campo se habilita cuando seleccionas 2 en BRIGADAS REALIZADAS.")
 
         submitted = st.form_submit_button("Guardar información", type="primary", use_container_width=True)
 
