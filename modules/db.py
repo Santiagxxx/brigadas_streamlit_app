@@ -5,7 +5,14 @@ import sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, List
+
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+except ImportError:  # pragma: no cover - solo aplica si no se instalaron dependencias de producción.
+    psycopg2 = None
+    RealDictCursor = None
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.environ.get("BRIGADAS_DATA_DIR", BASE_DIR / "data"))
@@ -16,7 +23,44 @@ def _ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def get_connection() -> sqlite3.Connection:
+def _get_secret_or_env(name: str) -> str:
+    try:
+        import streamlit as st
+
+        value = st.secrets.get(name, "")
+    except Exception:
+        value = ""
+    return str(value or os.environ.get(name, "")).strip()
+
+
+def get_database_url() -> str:
+    return _get_secret_or_env("DATABASE_URL")
+
+
+def is_postgres_enabled() -> bool:
+    return bool(get_database_url())
+
+
+def get_database_backend() -> str:
+    return "PostgreSQL" if is_postgres_enabled() else "SQLite local"
+
+
+def _normalize_database_url(database_url: str) -> str:
+    if database_url.startswith("postgres://"):
+        return database_url.replace("postgres://", "postgresql://", 1)
+    return database_url
+
+
+def get_connection():
+    database_url = get_database_url()
+    if database_url:
+        if psycopg2 is None:
+            raise RuntimeError(
+                "DATABASE_URL está configurado, pero falta instalar psycopg2-binary. "
+                "Ejecuta: pip install -r requirements.txt"
+            )
+        return psycopg2.connect(_normalize_database_url(database_url), connect_timeout=10)
+
     _ensure_data_dir()
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
@@ -28,6 +72,31 @@ def get_connection() -> sqlite3.Connection:
 
 def init_db() -> None:
     with closing(get_connection()) as conn:
+        if is_postgres_enabled():
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS submissions (
+                        id BIGSERIAL PRIMARY KEY,
+                        codigo_mca TEXT NOT NULL,
+                        nombre_mca TEXT NOT NULL,
+                        brigadas_realizadas INTEGER NOT NULL,
+                        personas_brigada_1 INTEGER NOT NULL,
+                        personas_brigada_2 INTEGER NOT NULL,
+                        region TEXT NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    );
+                    """
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_submissions_created_at ON submissions(created_at DESC);"
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_submissions_codigo_mca ON submissions(codigo_mca);"
+                )
+            conn.commit()
+            return
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS submissions (
@@ -54,6 +123,35 @@ def init_db() -> None:
 def insert_submission(payload: Dict[str, object]) -> int:
     created_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
     with closing(get_connection()) as conn:
+        if is_postgres_enabled():
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO submissions (
+                        codigo_mca,
+                        nombre_mca,
+                        brigadas_realizadas,
+                        personas_brigada_1,
+                        personas_brigada_2,
+                        region,
+                        created_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id;
+                    """,
+                    (
+                        str(payload["codigo_mca"]).strip(),
+                        str(payload["nombre_mca"]).strip(),
+                        int(payload["brigadas_realizadas"]),
+                        int(payload["personas_brigada_1"]),
+                        int(payload["personas_brigada_2"]),
+                        str(payload["region"]).strip(),
+                        created_at,
+                    ),
+                )
+                row = cur.fetchone()
+            conn.commit()
+            return int(row[0])
+
         cur = conn.execute(
             """
             INSERT INTO submissions (
@@ -82,12 +180,40 @@ def insert_submission(payload: Dict[str, object]) -> int:
 
 def count_records() -> int:
     with closing(get_connection()) as conn:
+        if is_postgres_enabled():
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) AS total FROM submissions;")
+                row = cur.fetchone()
+            return int(row[0])
+
         row = conn.execute("SELECT COUNT(*) AS total FROM submissions;").fetchone()
         return int(row["total"])
 
 
 def get_recent_records(limit: int = 500) -> List[Dict[str, object]]:
     with closing(get_connection()) as conn:
+        if is_postgres_enabled():
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        id,
+                        created_at::text AS created_at,
+                        codigo_mca,
+                        nombre_mca,
+                        brigadas_realizadas,
+                        personas_brigada_1,
+                        personas_brigada_2,
+                        region
+                    FROM submissions
+                    ORDER BY id DESC
+                    LIMIT %s;
+                    """,
+                    (int(limit),),
+                )
+                rows = cur.fetchall()
+            return [dict(row) for row in rows]
+
         rows = conn.execute(
             """
             SELECT
@@ -111,6 +237,24 @@ def get_recent_records(limit: int = 500) -> List[Dict[str, object]]:
 def get_records_for_export() -> List[Dict[str, object]]:
     """Returns all records in the exact order needed for the Excel export."""
     with closing(get_connection()) as conn:
+        if is_postgres_enabled():
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        codigo_mca,
+                        nombre_mca,
+                        brigadas_realizadas,
+                        personas_brigada_1,
+                        personas_brigada_2,
+                        region
+                    FROM submissions
+                    ORDER BY id ASC;
+                    """
+                )
+                rows = cur.fetchall()
+            return [dict(row) for row in rows]
+
         rows = conn.execute(
             """
             SELECT
@@ -129,5 +273,11 @@ def get_records_for_export() -> List[Dict[str, object]]:
 
 def delete_all_records() -> None:
     with closing(get_connection()) as conn:
+        if is_postgres_enabled():
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM submissions;")
+            conn.commit()
+            return
+
         conn.execute("DELETE FROM submissions;")
         conn.commit()
